@@ -13,7 +13,7 @@ import { CreateGoalDto } from './dto/create-goal.dto';
 import { UpdateGoalDto } from './dto/update-goal.dto';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { User } from '@supabase/supabase-js';
+import type { User } from '@supabase/supabase-js';
 
 @UseGuards(SupabaseAuthGuard)
 @Controller('goals')

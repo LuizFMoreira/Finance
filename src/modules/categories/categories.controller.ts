@@ -13,7 +13,7 @@ import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { User } from '@supabase/supabase-js';
+import type { User } from '@supabase/supabase-js';
 
 @UseGuards(SupabaseAuthGuard)
 @Controller('categories')

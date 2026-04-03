@@ -14,7 +14,7 @@ import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { User } from '@supabase/supabase-js';
+import type { User } from '@supabase/supabase-js';
 
 @UseGuards(SupabaseAuthGuard)
 @Controller('transactions')
