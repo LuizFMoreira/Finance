@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 
@@ -11,24 +12,24 @@ async function bootstrap() {
   // ── Segurança de cabeçalhos HTTP ──────────────────────────────────────────
   app.use(helmet());
 
-  // ── CORS: apenas o frontend local em desenvolvimento ──────────────────────
+  // ── Cookie parser (necessário para HttpOnly cookies) ──────────────────────
+  app.use(cookieParser());
+
+  // ── CORS: apenas o frontend autorizado ───────────────────────────────────
   app.enableCors({
     origin: process.env.FRONTEND_URL ?? 'http://localhost:5173',
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true,
+    credentials: true, // obrigatório para enviar cookies cross-origin
   });
 
   // ── Validação e sanitização de payload ────────────────────────────────────
-  // whitelist: remove campos não declarados no DTO
-  // forbidNonWhitelisted: lança 400 se campos extras forem enviados
-  // transform: converte tipos automaticamente (string → number, etc.)
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
-      transformOptions: { enableImplicitConversion: true },
+      transformOptions: { enableImplicitConversion: false }, // desabilitado: sem coerção implícita
     }),
   );
 

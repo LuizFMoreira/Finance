@@ -16,24 +16,28 @@ export class SupabaseAuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    const authHeader = request.headers['authorization'];
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // Lê token do cookie HttpOnly (preferencial) ou do header Authorization
+    const cookieToken: string | undefined = (request as any).cookies?.pluma_session;
+    const authHeader = request.headers['authorization'];
+    const headerToken =
+      authHeader && authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7)
+        : undefined;
+
+    const token = cookieToken ?? headerToken;
+
+    if (!token) {
       throw new UnauthorizedException('Token de autenticação não fornecido');
     }
 
-    const token = authHeader.slice(7);
-
-    const { data, error } = await this.supabase
-      .getClient()
-      .auth.getUser(token);
+    const { data, error } = await this.supabase.getClient().auth.getUser(token);
 
     if (error || !data.user) {
-      this.logger.warn(`Token inválido ou expirado: ${error?.message ?? 'sem usuário'}`);
+      this.logger.warn(`Token inválido ou expirado`);
       throw new UnauthorizedException('Token inválido ou expirado');
     }
 
-    // Injeta o usuário autenticado no request para uso nos controllers
     (request as any).user = data.user;
     return true;
   }

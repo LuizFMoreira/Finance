@@ -241,7 +241,7 @@ function Navbar() {
         </motion.div>
 
         <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.35 }} className="hidden md:flex items-center gap-3">
-          <a href="/dashboard" style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.6)", padding: "8px 16px" }} className="hover:text-white transition-colors">Entrar</a>
+          <a href="/login" style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.6)", padding: "8px 16px" }} className="hover:text-white transition-colors">Entrar</a>
           <motion.a
             href="/dashboard"
             whileHover={{ scale: 1.04, boxShadow: "0 0 28px rgba(124,58,237,0.6)" }}

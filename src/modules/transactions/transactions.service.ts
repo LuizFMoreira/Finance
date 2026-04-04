@@ -1,6 +1,7 @@
 import {
   Injectable,
   NotFoundException,
+  BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
 import { SupabaseService } from '../../supabase/supabase.service';
@@ -50,12 +51,27 @@ export class TransactionsService {
 
     const { data, error, count } = await query;
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new InternalServerErrorException('Erro ao processar transação');
 
     return { data, total: count, page, limit };
   }
 
   async create(userId: string, dto: CreateTransactionDto) {
+    // IDOR fix: verifica que a categoria pertence ao usuário ou é do sistema (user_id IS NULL)
+    if (dto.category_id) {
+      const { data: cat } = await this.supabase
+        .getClient()
+        .from('categories')
+        .select('user_id')
+        .eq('id', dto.category_id)
+        .single();
+
+      if (!cat) throw new BadRequestException('Categoria não encontrada');
+      if (cat.user_id !== null && cat.user_id !== userId) {
+        throw new BadRequestException('Categoria inválida');
+      }
+    }
+
     const { data, error } = await this.supabase
       .getClient()
       .from('transactions')
@@ -63,7 +79,7 @@ export class TransactionsService {
       .select('*, categories(id, name, color, icon)')
       .single();
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new InternalServerErrorException('Erro ao processar transação');
     return data;
   }
 
@@ -77,7 +93,7 @@ export class TransactionsService {
       .select('*, categories(id, name, color, icon)')
       .single();
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new InternalServerErrorException('Erro ao processar transação');
     if (!data) throw new NotFoundException('Transação não encontrada');
     return data;
   }
@@ -90,7 +106,7 @@ export class TransactionsService {
       .eq('id', id)
       .eq('user_id', userId);
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new InternalServerErrorException('Erro ao processar transação');
     return { message: 'Transação removida' };
   }
 }

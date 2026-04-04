@@ -41,7 +41,7 @@ export class GoalsService {
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new InternalServerErrorException('Erro ao processar meta');
     return data;
   }
 
@@ -66,7 +66,7 @@ export class GoalsService {
       .select()
       .single();
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new InternalServerErrorException('Erro ao processar meta');
     return data;
   }
 
@@ -99,7 +99,7 @@ export class GoalsService {
       .select()
       .single();
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new InternalServerErrorException('Erro ao processar meta');
     return data;
   }
 
@@ -111,7 +111,7 @@ export class GoalsService {
       .eq('id', id)
       .eq('user_id', userId);
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new InternalServerErrorException('Erro ao processar meta');
     return { message: 'Meta removida' };
   }
 }

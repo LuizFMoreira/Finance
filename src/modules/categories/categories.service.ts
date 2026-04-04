@@ -20,7 +20,7 @@ export class CategoriesService {
       .or(`user_id.eq.${userId},user_id.is.null`)
       .order('name');
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new InternalServerErrorException('Erro ao processar categoria');
     return data;
   }
 
@@ -32,7 +32,7 @@ export class CategoriesService {
       .select()
       .single();
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new InternalServerErrorException('Erro ao processar categoria');
     return data;
   }
 
@@ -56,7 +56,7 @@ export class CategoriesService {
       .select()
       .single();
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new InternalServerErrorException('Erro ao processar categoria');
     return data;
   }
 
@@ -78,7 +78,7 @@ export class CategoriesService {
       .delete()
       .eq('id', id);
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new InternalServerErrorException('Erro ao processar categoria');
     return { message: 'Categoria removida' };
   }
 }

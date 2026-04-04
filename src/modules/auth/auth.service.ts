@@ -3,6 +3,7 @@ import {
   UnauthorizedException,
   ConflictException,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { SupabaseService } from '../../supabase/supabase.service';
 import { SignupDto } from './dto/signup.dto';
@@ -10,6 +11,8 @@ import { LoginDto } from './dto/login.dto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(private readonly supabase: SupabaseService) {}
 
   async signup(dto: SignupDto) {
@@ -22,21 +25,22 @@ export class AuthService {
       if (error.message.includes('already registered')) {
         throw new ConflictException('Email já cadastrado');
       }
-      throw new InternalServerErrorException(error.message);
+      this.logger.error(`Signup error: ${error.message}`);
+      throw new InternalServerErrorException('Erro ao criar conta');
     }
 
     if (!data.user) {
-      throw new InternalServerErrorException('Erro ao criar usuário');
+      throw new InternalServerErrorException('Erro ao criar conta');
     }
 
-    // Cria o perfil do usuário
     const { error: profileError } = await this.supabase
       .getClient()
       .from('profiles')
-      .insert({ id: data.user.id, name: dto.name });
+      .insert({ id: data.user.id, name: dto.name, email: dto.email });
 
     if (profileError) {
-      throw new InternalServerErrorException(profileError.message);
+      this.logger.error(`Profile insert error: ${profileError.message}`);
+      throw new InternalServerErrorException('Erro ao criar perfil');
     }
 
     return {
@@ -48,16 +52,12 @@ export class AuthService {
   async login(dto: LoginDto) {
     const { data, error } = await this.supabase
       .getClient()
-      .auth.signInWithPassword({
-        email: dto.email,
-        password: dto.password,
-      });
+      .auth.signInWithPassword({ email: dto.email, password: dto.password });
 
     if (error || !data.user) {
       throw new UnauthorizedException('Email ou senha incorretos');
     }
 
-    // Busca o perfil para retornar o nome
     const { data: profile } = await this.supabase
       .getClient()
       .from('profiles')
@@ -66,28 +66,33 @@ export class AuthService {
       .single();
 
     return {
-      user: {
-        id: data.user.id,
-        email: data.user.email,
-        name: profile?.name ?? '',
-      },
+      user: { id: data.user.id, email: data.user.email, name: profile?.name ?? '' },
       access_token: data.session.access_token,
     };
   }
 
   async me(userId: string) {
-    const { data: profile } = await this.supabase
+    const { data: profile, error } = await this.supabase
       .getClient()
       .from('profiles')
-      .select('*')
+      .select('id, name, email, created_at')
       .eq('id', userId)
       .single();
+
+    if (error) {
+      this.logger.error(`Profile fetch error: ${error.message}`);
+      throw new InternalServerErrorException('Erro ao buscar perfil');
+    }
 
     return profile;
   }
 
-  async logout(token: string) {
-    await this.supabase.getClient().auth.admin.signOut(token);
+  async logout(userId: string) {
+    try {
+      await this.supabase.getClient().auth.admin.signOut(userId);
+    } catch (err) {
+      this.logger.warn(`Logout error for user ${userId}: ${err}`);
+    }
     return { message: 'Sessão encerrada' };
   }
 }

@@ -1,100 +1,352 @@
-import { useState } from "react";
-import { motion } from "framer-motion";
-import {
-  Search,
-  Filter,
-  Download,
-  ShoppingCart,
-  Car,
-  Utensils,
-  Monitor,
-  Zap,
-  Briefcase,
-  Heart,
-  MoreHorizontal,
-} from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Search, Plus, X, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatCurrency, formatDate, EASE_OUT } from "@/lib/utils";
+import api from "@/services/api";
 
-/* ── types ── */
-type Nature = "essential" | "superfluous";
-
+interface Category { id: string; name: string; color: string }
 interface Transaction {
-  id: number;
+  id: string;
   date: string;
   description: string;
-  category: string;
-  categoryIcon: React.ElementType;
-  value: number;
-  nature: Nature;
+  amount: number;
+  nature: "income" | "expense";
+  category_id: string | null;
+  categories: { name: string; color: string } | null;
 }
-
-/* ── mock data ── */
-const TRANSACTIONS: Transaction[] = [
-  { id: 1, date: "2024-07-10", description: "Salário - Empresa XYZ", category: "Renda", categoryIcon: Briefcase, value: 9800, nature: "essential" },
-  { id: 2, date: "2024-07-09", description: "iFood - Pedido #4821", category: "Alimentação", categoryIcon: Utensils, value: -68.9, nature: "superfluous" },
-  { id: 3, date: "2024-07-08", description: "Netflix", category: "Entretenimento", categoryIcon: Monitor, value: -55.9, nature: "superfluous" },
-  { id: 4, date: "2024-07-08", description: "Posto Ipiranga", category: "Transporte", categoryIcon: Car, value: -180, nature: "essential" },
-  { id: 5, date: "2024-07-07", description: "Supermercado Extra", category: "Alimentação", categoryIcon: ShoppingCart, value: -284.6, nature: "essential" },
-  { id: 6, date: "2024-07-06", description: "Conta de Luz", category: "Utilidades", categoryIcon: Zap, value: -142.3, nature: "essential" },
-  { id: 7, date: "2024-07-05", description: "Plano de Saúde", category: "Saúde", categoryIcon: Heart, value: -320, nature: "essential" },
-  { id: 8, date: "2024-07-04", description: "Amazon - Compras", category: "Compras", categoryIcon: ShoppingCart, value: -234.5, nature: "superfluous" },
-  { id: 9, date: "2024-07-03", description: "Uber", category: "Transporte", categoryIcon: Car, value: -32.4, nature: "superfluous" },
-  { id: 10, date: "2024-07-02", description: "Spotify", category: "Entretenimento", categoryIcon: Monitor, value: -21.9, nature: "superfluous" },
-  { id: 11, date: "2024-07-01", description: "Farmácia Ultrafarma", category: "Saúde", categoryIcon: Heart, value: -87.6, nature: "essential" },
-  { id: 12, date: "2024-06-30", description: "Rappi - Delivery", category: "Alimentação", categoryIcon: Utensils, value: -78.4, nature: "superfluous" },
-];
-
-const CATEGORY_COLORS: Record<string, string> = {
-  Renda: "bg-emerald-50 text-emerald-700",
-  Alimentação: "bg-orange-50 text-orange-700",
-  Entretenimento: "bg-purple-50 text-purple-700",
-  Transporte: "bg-blue-50 text-blue-700",
-  Utilidades: "bg-yellow-50 text-yellow-700",
-  Saúde: "bg-red-50 text-red-700",
-  Compras: "bg-pink-50 text-pink-700",
-};
-
-const ITEMS_PER_PAGE = 8;
 
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
   show: (i: number) => ({
-    opacity: 1,
-    y: 0,
+    opacity: 1, y: 0,
     transition: { delay: i * 0.045, duration: 0.4, ease: EASE_OUT },
   }),
 };
 
-export default function Transactions() {
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "essential" | "superfluous">("all");
-  const [page, setPage] = useState(1);
+function CategoryBadge({ cat }: { cat: { name: string; color: string } | null }) {
+  if (!cat) return <span className="text-xs text-primary/30">—</span>;
+  const bg = cat.color + "22"; // ~13% opacity
+  return (
+    <span
+      className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-600"
+      style={{ backgroundColor: bg, color: cat.color }}
+    >
+      {cat.name}
+    </span>
+  );
+}
 
-  const filtered = TRANSACTIONS.filter((t) => {
-    const matchSearch =
-      t.description.toLowerCase().includes(search.toLowerCase()) ||
-      t.category.toLowerCase().includes(search.toLowerCase());
-    const matchFilter = filter === "all" || t.nature === filter;
-    return matchSearch && matchFilter;
+// ── Modal (create + edit) ────────────────────────────────────────────────────
+
+interface ModalProps {
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+  editing?: Transaction;
+}
+
+function Modal({ open, onClose, onSaved, editing }: ModalProps) {
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [form, setForm] = useState({
+    description: "",
+    amount: "",
+    nature: "expense" as "income" | "expense",
+    date: new Date().toISOString().split("T")[0],
+    category_id: "",
   });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
-  const paginated = filtered.slice((page - 1) * ITEMS_PER_PAGE, page * ITEMS_PER_PAGE);
+  // Populate form when editing
+  useEffect(() => {
+    if (open) {
+      api.get("/categories").then((r) => setCategories(r.data)).catch(() => {});
+      if (editing) {
+        setForm({
+          description: editing.description,
+          amount: String(editing.amount),
+          nature: editing.nature,
+          date: editing.date,
+          category_id: editing.category_id ?? "",
+        });
+      } else {
+        setForm({ description: "", amount: "", nature: "expense", date: new Date().toISOString().split("T")[0], category_id: "" });
+      }
+      setError("");
+    }
+  }, [open, editing]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    const body = {
+      description: form.description,
+      amount: parseFloat(form.amount),
+      nature: form.nature,
+      date: form.date,
+      ...(form.category_id ? { category_id: form.category_id } : { category_id: null }),
+    };
+    try {
+      if (editing) {
+        await api.patch(`/transactions/${editing.id}`, body);
+      } else {
+        await api.post("/transactions", body);
+      }
+      onSaved();
+      onClose();
+    } catch (err: any) {
+      const raw = err?.response?.data?.message;
+      setError(Array.isArray(raw) ? raw.join(", ") : (raw ?? "Erro ao salvar."));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!open) return null;
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+        onClick={onClose}
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 16 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between mb-5">
+            <h2 className="text-base font-700 text-primary">
+              {editing ? "Editar Transação" : "Nova Transação"}
+            </h2>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+              <X className="w-4 h-4 text-primary/50" />
+            </button>
+          </div>
+
+          <form onSubmit={submit} className="space-y-4">
+            <div>
+              <label className="text-xs font-600 text-primary/50 uppercase tracking-wider">Descrição</label>
+              <input
+                required value={form.description}
+                onChange={(e) => setForm({ ...form, description: e.target.value })}
+                placeholder="Ex: Mercado, Salário..."
+                className="mt-1 w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl text-primary placeholder:text-primary/30 focus:outline-none focus:border-primary/40"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-600 text-primary/50 uppercase tracking-wider">Valor (R$)</label>
+                <input
+                  required type="number" min="0.01" step="0.01"
+                  value={form.amount}
+                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
+                  placeholder="0,00"
+                  className="mt-1 w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl text-primary placeholder:text-primary/30 focus:outline-none focus:border-primary/40"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-600 text-primary/50 uppercase tracking-wider">Data</label>
+                <input
+                  required type="date" value={form.date}
+                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+                  className="mt-1 w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl text-primary focus:outline-none focus:border-primary/40"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-600 text-primary/50 uppercase tracking-wider">Tipo</label>
+              <div className="flex gap-2 mt-1">
+                {(["expense", "income"] as const).map((n) => (
+                  <button
+                    key={n} type="button"
+                    onClick={() => setForm({ ...form, nature: n })}
+                    className={`flex-1 py-2 rounded-xl text-sm font-600 transition-all ${
+                      form.nature === n
+                        ? n === "income" ? "bg-emerald-500 text-white" : "bg-red-500 text-white"
+                        : "bg-gray-100 text-primary/50 hover:bg-gray-200"
+                    }`}
+                  >
+                    {n === "income" ? "Receita" : "Despesa"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-600 text-primary/50 uppercase tracking-wider">Categoria (opcional)</label>
+              <select
+                value={form.category_id}
+                onChange={(e) => setForm({ ...form, category_id: e.target.value })}
+                className="mt-1 w-full px-3 py-2.5 text-sm bg-gray-50 border border-gray-200 rounded-xl text-primary focus:outline-none focus:border-primary/40"
+              >
+                <option value="">Sem categoria</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {error && <p className="text-red-500 text-xs bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+
+            <Button type="submit" disabled={loading} className="w-full">
+              {loading ? "Salvando..." : editing ? "Salvar alterações" : "Salvar Transação"}
+            </Button>
+          </form>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+// ── Row actions dropdown ─────────────────────────────────────────────────────
+
+function RowActions({ tx, onEdit, onDelete }: {
+  tx: Transaction;
+  onEdit: (tx: Transaction) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((s) => !s)}
+        className="p-1 rounded-lg hover:bg-gray-100 transition-colors"
+      >
+        <MoreHorizontal className="w-3.5 h-3.5 text-primary/40" />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.12 }}
+            className="absolute right-0 top-7 z-20 w-36 bg-white rounded-xl shadow-card-hover border border-gray-100 overflow-hidden"
+          >
+            <button
+              onClick={() => { setOpen(false); onEdit(tx); }}
+              className="flex items-center gap-2 w-full px-3 py-2.5 text-sm text-primary/70 hover:bg-lavender-light hover:text-primary transition-colors"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              Editar
+            </button>
+            <button
+              onClick={() => { setOpen(false); onDelete(tx.id); }}
+              className="flex items-center gap-2 w-full px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Excluir
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+
+const ITEMS_PER_PAGE = 10;
+
+export default function Transactions() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState(searchParams.get("q") ?? "");
+  const [filter, setFilter] = useState<"all" | "income" | "expense">("all");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [showModal, setShowModal] = useState(false);
+  const [editing, setEditing] = useState<Transaction | undefined>(undefined);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params: Record<string, any> = { page, limit: ITEMS_PER_PAGE };
+      if (filter !== "all") params.nature = filter;
+      if (search) params.search = search;
+      const { data } = await api.get("/transactions", { params });
+      setTransactions(data.data ?? []);
+      setTotal(data.total ?? 0);
+    } catch {
+      setTransactions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, filter, search]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Sync search state into URL so Topbar deep-link works
+  useEffect(() => {
+    if (search) {
+      setSearchParams({ q: search }, { replace: true });
+    } else {
+      setSearchParams({}, { replace: true });
+    }
+  }, [search, setSearchParams]);
+
+  async function handleDelete(id: string) {
+    if (!confirm("Excluir esta transação?")) return;
+    try {
+      await api.delete(`/transactions/${id}`);
+      load();
+    } catch {
+      alert("Erro ao excluir.");
+    }
+  }
+
+  function openEdit(tx: Transaction) {
+    setEditing(tx);
+    setShowModal(true);
+  }
+
+  function openCreate() {
+    setEditing(undefined);
+    setShowModal(true);
+  }
+
+  const totalPages = Math.ceil(total / ITEMS_PER_PAGE);
 
   return (
     <div className="flex flex-col gap-6 max-w-7xl">
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        onSaved={load}
+        editing={editing}
+      />
+
       {/* Filters bar */}
       <motion.div
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
         className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between"
       >
         <div className="flex gap-2">
-          {(["all", "essential", "superfluous"] as const).map((f) => (
+          {(["all", "income", "expense"] as const).map((f) => (
             <button
               key={f}
               onClick={() => { setFilter(f); setPage(1); }}
@@ -104,7 +356,7 @@ export default function Transactions() {
                   : "bg-white text-primary/60 border border-gray-200 hover:bg-lavender-light hover:text-primary"
               }`}
             >
-              {f === "all" ? "Todos" : f === "essential" ? "Essenciais" : "Supérfluos"}
+              {f === "all" ? "Todas" : f === "income" ? "Receitas" : "Despesas"}
             </button>
           ))}
         </div>
@@ -118,48 +370,59 @@ export default function Transactions() {
               placeholder="Buscar transação..."
               className="w-full pl-9 pr-4 py-2 text-sm bg-white border border-gray-200 rounded-xl text-primary placeholder:text-primary/35 focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all"
             />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2">
+                <X className="w-3.5 h-3.5 text-primary/30 hover:text-primary/60" />
+              </button>
+            )}
           </div>
-          <Button variant="outline" size="icon" className="shrink-0">
-            <Filter className="w-3.5 h-3.5" />
-          </Button>
-          <Button variant="outline" size="icon" className="shrink-0">
-            <Download className="w-3.5 h-3.5" />
+          <Button onClick={openCreate} size="sm" className="gap-1.5 shrink-0">
+            <Plus className="w-3.5 h-3.5" />
+            Nova
           </Button>
         </div>
       </motion.div>
 
-      {/* Table card */}
+      {/* Table */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Movimentações</CardTitle>
-            <span className="text-xs text-primary/40">{filtered.length} registros</span>
+            <span className="text-xs text-primary/40">{total} registros</span>
           </div>
         </CardHeader>
         <CardContent className="pt-0 overflow-x-auto">
-          <table className="w-full min-w-[600px]">
-            <thead>
-              <tr className="border-b border-gray-100">
-                {["Data", "Descrição", "Categoria", "Natureza", "Valor"].map((h) => (
-                  <th key={h} className="text-left text-xs font-700 text-primary/40 uppercase tracking-wider pb-3 pr-4 last:pr-0 last:text-right">
-                    {h}
-                  </th>
-                ))}
-                <th className="pb-3 w-8" />
-              </tr>
-            </thead>
-            <tbody>
-              {paginated.map((tx, i) => {
-                const Icon = tx.categoryIcon;
-                const colorCls = CATEGORY_COLORS[tx.category] ?? "bg-gray-50 text-gray-600";
-                return (
+          {loading ? (
+            <div className="py-12 text-center text-primary/30 text-sm">Carregando...</div>
+          ) : transactions.length === 0 ? (
+            <div className="py-12 text-center">
+              <p className="text-primary/30 text-sm mb-3">Nenhuma transação encontrada.</p>
+              <Button size="sm" onClick={openCreate} className="gap-1.5">
+                <Plus className="w-3.5 h-3.5" />
+                Adicionar primeira transação
+              </Button>
+            </div>
+          ) : (
+            <table className="w-full min-w-[600px]">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  {["Data", "Descrição", "Categoria", "Tipo", "Valor"].map((h) => (
+                    <th key={h} className="text-left text-xs font-700 text-primary/40 uppercase tracking-wider pb-3 pr-4 last:pr-0 last:text-right">
+                      {h}
+                    </th>
+                  ))}
+                  <th className="pb-3 w-8" />
+                </tr>
+              </thead>
+              <tbody>
+                {transactions.map((tx, i) => (
                   <motion.tr
                     key={tx.id}
                     custom={i}
                     variants={fadeUp}
                     initial="hidden"
                     animate="show"
-                    className="group border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors cursor-pointer"
+                    className="group border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors"
                   >
                     <td className="py-3.5 pr-4 text-xs text-primary/50 whitespace-nowrap">
                       {formatDate(tx.date)}
@@ -168,56 +431,41 @@ export default function Transactions() {
                       <p className="text-sm font-600 text-primary leading-tight">{tx.description}</p>
                     </td>
                     <td className="py-3.5 pr-4">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-600 ${colorCls}`}>
-                        <Icon className="w-3 h-3" />
-                        {tx.category}
-                      </span>
+                      <CategoryBadge cat={tx.categories} />
                     </td>
                     <td className="py-3.5 pr-4">
-                      {tx.value > 0 ? (
+                      {tx.nature === "income" ? (
                         <Badge variant="income">Receita</Badge>
-                      ) : tx.nature === "essential" ? (
-                        <Badge variant="essential">Essencial</Badge>
                       ) : (
-                        <Badge variant="superfluous">Supérfluo</Badge>
+                        <Badge variant="superfluous">Despesa</Badge>
                       )}
                     </td>
                     <td className="py-3.5 text-right">
-                      <span
-                        className={`text-sm font-700 tabular-nums ${
-                          tx.value > 0 ? "text-emerald-600" : "text-primary"
-                        }`}
-                      >
-                        {tx.value > 0 ? "+" : ""}
-                        {formatCurrency(tx.value)}
+                      <span className={`text-sm font-700 tabular-nums ${tx.nature === "income" ? "text-emerald-600" : "text-primary"}`}>
+                        {tx.nature === "income" ? "+" : "-"}{formatCurrency(tx.amount)}
                       </span>
                     </td>
                     <td className="py-3.5 pl-3 w-8">
-                      <button className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-lg hover:bg-gray-100">
-                        <MoreHorizontal className="w-3.5 h-3.5 text-primary/40" />
-                      </button>
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <RowActions tx={tx} onEdit={openEdit} onDelete={handleDelete} />
+                      </div>
                     </td>
                   </motion.tr>
-                );
-              })}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          )}
 
           {/* Pagination */}
           {totalPages > 1 && (
             <div className="flex items-center justify-between mt-5 pt-4 border-t border-gray-100">
-              <span className="text-xs text-primary/40">
-                Página {page} de {totalPages}
-              </span>
+              <span className="text-xs text-primary/40">Página {page} de {totalPages}</span>
               <div className="flex gap-1">
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
                   <button
-                    key={p}
-                    onClick={() => setPage(p)}
+                    key={p} onClick={() => setPage(p)}
                     className={`w-8 h-8 rounded-lg text-xs font-600 transition-all ${
-                      page === p
-                        ? "bg-primary text-white"
-                        : "text-primary/50 hover:bg-lavender-light hover:text-primary"
+                      page === p ? "bg-primary text-white" : "text-primary/50 hover:bg-lavender-light hover:text-primary"
                     }`}
                   >
                     {p}

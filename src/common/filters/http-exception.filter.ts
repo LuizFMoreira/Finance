@@ -8,14 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 
-interface ErrorResponse {
-  statusCode: number;
-  timestamp: string;
-  path: string;
-  method: string;
-  message: string | string[];
-  error: string;
-}
+const isProd = process.env.NODE_ENV === 'production';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -45,19 +38,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
         error = (body.error as string) ?? exception.name;
       }
     } else if (exception instanceof Error) {
-      this.logger.error(
-        `Unhandled exception: ${exception.message}`,
-        exception.stack,
-      );
+      // Em produção, nunca expõe detalhes de erros 500
+      this.logger.error(`Unhandled exception: ${exception.message}`, exception.stack);
     }
 
-    const body: ErrorResponse = {
+    const body: Record<string, unknown> = {
       statusCode: status,
       timestamp: new Date().toISOString(),
-      path: request.url,
-      method: request.method,
       message,
       error,
+      // Path e método só em desenvolvimento — em produção evita mapeamento de rotas
+      ...(!isProd && { path: request.url, method: request.method }),
     };
 
     response.status(status).json(body);

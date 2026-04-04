@@ -3,12 +3,7 @@ import axios from "axios";
 const api = axios.create({
   baseURL: "/api",
   headers: { "Content-Type": "application/json" },
-});
-
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
+  withCredentials: true, // envia o cookie HttpOnly automaticamente em todas as requisições
 });
 
 /* ── Categories ── */
@@ -20,26 +15,26 @@ export const categoriesService = {
 
 /* ── Transactions ── */
 export const transactionsService = {
-  list: (params?: { page?: number; limit?: number; category?: string }) =>
+  list: (params?: { page?: number; limit?: number; nature?: string; search?: string }) =>
     api.get("/transactions", { params }),
   create: (data: unknown) => api.post("/transactions", data),
-  update: (id: number, data: unknown) => api.patch(`/transactions/${id}`, data),
-  remove: (id: number) => api.delete(`/transactions/${id}`),
+  update: (id: string, data: unknown) => api.patch(`/transactions/${id}`, data),
+  remove: (id: string) => api.delete(`/transactions/${id}`),
 };
 
 /* ── Goals ── */
 export const goalsService = {
   list: () => api.get("/goals"),
   create: (data: unknown) => api.post("/goals", data),
-  update: (id: number, data: unknown) => api.patch(`/goals/${id}`, data),
-  remove: (id: number) => api.delete(`/goals/${id}`),
+  update: (id: string, data: unknown) => api.patch(`/goals/${id}`, data),
+  remove: (id: string) => api.delete(`/goals/${id}`),
 };
 
 /* ── Dashboard ── */
 export const dashboardService = {
   summary: () => api.get("/dashboard/summary"),
-  chartData: (period?: string) => api.get("/dashboard/chart", { params: { period } }),
-  aiInsights: () => api.get("/dashboard/insights"),
+  chartData: (months = 6) => api.get("/dashboard/chart", { params: { months } }),
+  insights: () => api.get("/dashboard/insights"),
 };
 
 export default api;

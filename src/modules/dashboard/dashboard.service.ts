@@ -20,22 +20,22 @@ export class DashboardService {
     ]);
 
     const receitas = currentData
-      .filter((t) => t.amount > 0)
+      .filter((t) => t.nature === 'income')
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const despesas = currentData
-      .filter((t) => t.amount < 0)
-      .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
+      .filter((t) => t.nature === 'expense')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const saldo = receitas - despesas;
 
     const prevReceitas = previousData
-      .filter((t) => t.amount > 0)
+      .filter((t) => t.nature === 'income')
       .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const prevDespesas = previousData
-      .filter((t) => t.amount < 0)
-      .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
+      .filter((t) => t.nature === 'expense')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const deltaReceitas =
       prevReceitas > 0
@@ -67,12 +67,12 @@ export class DashboardService {
       const transactions = await this.getMonthData(userId, year, month);
 
       const receitas = transactions
-        .filter((t) => t.amount > 0)
+        .filter((t) => t.nature === 'income')
         .reduce((sum, t) => sum + Number(t.amount), 0);
 
       const despesas = transactions
-        .filter((t) => t.amount < 0)
-        .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
+        .filter((t) => t.nature === 'expense')
+        .reduce((sum, t) => sum + Number(t.amount), 0);
 
       result.push({
         month: date.toLocaleString('pt-BR', { month: 'short' }),
@@ -106,9 +106,9 @@ export class DashboardService {
 
     const insights: { id: number; text: string; tag: string }[] = [];
 
-    // Insight 1: Maior gasto supérfluo do mês
+    // Insight 1: Maior gasto do mês
     const superfluous = currentTx.filter(
-      (t) => t.nature === 'superfluous' && t.amount < 0,
+      (t) => t.nature === 'expense',
     );
     if (superfluous.length > 0) {
       const biggest = superfluous.reduce((max, t) =>
@@ -123,12 +123,12 @@ export class DashboardService {
 
     // Insight 2: Comparação de despesas com mês anterior
     const currDespesas = currentTx
-      .filter((t) => t.amount < 0)
-      .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
+      .filter((t) => t.nature === 'expense')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
 
     const prevDespesas = prevTx
-      .filter((t) => t.amount < 0)
-      .reduce((sum, t) => sum + Math.abs(Number(t.amount)), 0);
+      .filter((t) => t.nature === 'expense')
+      .reduce((sum, t) => sum + Number(t.amount), 0);
 
     if (prevDespesas > 0) {
       const diff = ((currDespesas - prevDespesas) / prevDespesas) * 100;
@@ -175,7 +175,7 @@ export class DashboardService {
       .gte('date', startDate)
       .lte('date', endDate);
 
-    if (error) throw new InternalServerErrorException(error.message);
+    if (error) throw new InternalServerErrorException('Erro ao carregar dados do dashboard');
     return data ?? [];
   }
 }
